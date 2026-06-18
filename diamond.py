@@ -1,146 +1,123 @@
 import tkinter as tk
 from tkinter import messagebox
+import database as db
+
+# Initialize Database on startup
+db.init_db()
 
 
-def add_task():
-    """Adds a task from the entry box to the list text box."""
-    task = task_entry.get().strip()
-    if task:
-        # Check if it's the default placeholder text
-        if task != "Type a new task here...":
-            # Add bullet point and formatting
-            task_list.insert(tk.END, f"  •  {task}\n")
-            task_entry.delete(0, tk.END)
-            update_placeholder(None)
+def refresh_list():
+    """Clears the listbox and reloads active tasks from the DB."""
+    task_listbox.delete(0, tk.END)
+    global active_tasks_mapping
+    # Keep track of database IDs matching the listbox index positions
+    active_tasks_mapping = db.get_active_tasks()
+
+    for task in active_tasks_mapping:
+        task_listbox.insert(tk.END, task[1])  # task[1] is the task_text
+
+
+def submit_task():
+    """Adds a task from the input field to the DB."""
+    text = task_entry.get().strip()
+    if text:
+        db.add_task(text)
+        task_entry.delete(0, tk.END)
+        refresh_list()
     else:
-        messagebox.showwarning("Warning", "You cannot add an empty task!")
+        messagebox.showwarning("Warning", "Task cannot be empty!")
+
+
+def complete_task():
+    """Marks selected task as Completed in DB."""
+    try:
+        selected_index = task_listbox.curselection()[0]
+        task_id = active_tasks_mapping[selected_index][0]
+
+        db.update_task_status(task_id, "Completed")
+        refresh_list()
+    except IndexError:
+        messagebox.showwarning("Warning", "Please select a task first!")
 
 
 def delete_task():
-    """Deletes the currently highlighted text or task."""
+    """Marks selected task as Deleted in DB instead of dropping it entirely."""
     try:
-        # Delete selected text in the text widget
-        task_list.delete(tk.SEL_FIRST, tk.SEL_LAST)
-    except tk.TclError:
-        messagebox.showinfo("Tip", "Highlight the text you want to delete first!")
+        selected_index = task_listbox.curselection()[0]
+        task_id = active_tasks_mapping[selected_index][0]
+
+        db.update_task_status(task_id, "Deleted")
+        refresh_list()
+    except IndexError:
+        messagebox.showwarning("Warning", "Please select a task first!")
 
 
-def clear_all():
-    """Clears the entire list."""
-    if messagebox.askyesno("Confirm", "Are you sure you want to clear all tasks?"):
-        task_list.delete("1.0", tk.END)
+def show_progress():
+    """Pulls data from the last 7 days and displays it in an alert box."""
+    stats = db.get_weekly_progress()
+    total = sum(stats.values())
+
+    progress_report = (
+        f"--- 7-Day Progress Report ---\n\n"
+        f"✅ Completed: {stats['Completed']}\n"
+        f"❌ Deleted/Dropped: {stats['Deleted']}\n"
+        f"⏳ Still Pending: {stats['Pending']}\n\n"
+        f"Total tracked items: {total}"
+    )
+    messagebox.showinfo("Weekly Stats", progress_report)
 
 
-# --- Placeholder Helpers for a Modern Look ---
-def clear_placeholder(event):
-    if task_entry.get() == "Type a new task here...":
-        task_entry.delete(0, tk.END)
-        task_entry.config(fg="#FFFFFF")  # Change text to white when typing
-
-
-def update_placeholder(event):
-    if not task_entry.get().strip():
-        task_entry.delete(0, tk.END)
-        task_entry.insert(0, "Type a new task here...")
-        task_entry.config(fg="#888888")  # Gray placeholder text
-
-
-# --- GUI Layout Setup ---
+# --- GUI Setup ---
 root = tk.Tk()
-root.title("TaskFlow Studio")
-root.geometry("450x550")
-root.config(bg="#1E1E24")  # Premium Dark Charcoal Background
+root.title("To-Do List with Progress Tracker")
+root.geometry("400x450")
+root.config(bg="#f4f4f9")
 
-# 1. Title Banner
-title_label = tk.Label(
+# Entry and Add Button Frame
+input_frame = tk.Frame(root, bg="#f4f4f9")
+input_frame.pack(pady=15)
+
+task_entry = tk.Entry(input_frame, font=("Helvetica", 12), width=25)
+task_entry.pack(side="left", padx=5)
+
+add_btn = tk.Button(
+    input_frame, text="Add Task", bg="#4A90E2", fg="white", command=submit_task
+)
+add_btn.pack(side="left")
+
+# Listbox for holding active tasks
+task_listbox = tk.Listbox(
+    root, font=("Helvetica", 11), width=38, height=12, selectbackground="#4A90E2"
+)
+task_listbox.pack(pady=10)
+
+# Action Buttons Frame
+action_frame = tk.Frame(root, bg="#f4f4f9")
+action_frame.pack(pady=10)
+
+done_btn = tk.Button(
+    action_frame, text="Complete", bg="#2ECC71", fg="white", command=complete_task
+)
+done_btn.pack(side="left", padx=10)
+
+del_btn = tk.Button(
+    action_frame, text="Delete", bg="#E74C3C", fg="white", command=delete_task
+)
+del_btn.pack(side="left", padx=10)
+
+# Progress Report Button
+progress_btn = tk.Button(
     root,
-    text="❤️ TaskFlow",
-    font=("Helvetica", 24, "bold"),
-    bg="#1E1E24",
-    fg="#6C5CE7",  # Modern Electric Purple
-)
-title_label.pack(pady=20)
-
-# 2. Entry Box Frame (Input Area)
-input_frame = tk.Frame(root, bg="#1E1E24")
-input_frame.pack(pady=10)
-
-task_entry = tk.Entry(
-    input_frame,
-    font=("Helvetica", 12),
-    bg="#2D2D35",
-    fg="#888888",
-    bd=0,
-    border=28,
-    insertbackground="white",  # Text cursor color
-    width=26,
-)
-task_entry.insert(0, "Type a new task here...")
-# Bind events for placeholder behavior
-task_entry.bind("<FocusIn>", clear_placeholder)
-task_entry.bind("<FocusOut>", update_placeholder)
-task_entry.pack(side=tk.LEFT, padx=5, ipady=8)  # ipady adds internal padding (taller box)
-
-add_button = tk.Button(
-    input_frame,
-    text="Add Task",
+    text="View Weekly Progress Report",
     font=("Helvetica", 10, "bold"),
-    bg="#6C5CE7",
+    bg="#9B59B6",
     fg="white",
-    bd=0,
-    activebackground="#5B4BC4",
-    activeforeground="white",
-    cursor="hand2",
-    command=add_task,
+    command=show_progress,
 )
-add_button.pack(side=tk.LEFT, padx=5, ipady=6, ipadx=10)
+progress_btn.pack(pady=15, fill="x", padx=40)
 
-# 3. Task Display Area (Text Box)
-# Using a Text widget instead of a Listbox allows for smoother scrolling and modern text selection
-task_list = tk.Text(
-    root,
-    font=("Helvetica", 13),
-    bg="#2D2D35",
-    fg="#E0E0E0",
-    bd=0,
-    padx=15,
-    pady=15,
-    spacing3=8,  # Adds space between paragraphs/tasks
-    width=38,
-    height=14,
-)
-task_list.pack(pady=15)
-
-# 4. Action Buttons Frame (Footer)
-button_frame = tk.Frame(root, bg="#1E1E24")
-button_frame.pack(pady=10)
-
-delete_button = tk.Button(
-    button_frame,
-    text="Delete Selected",
-    font=("Helvetica", 10, "bold"),
-    bg="#FF7675",  # Pastel Red
-    fg="white",
-    bd=0,
-    activebackground="#E84393",
-    activeforeground="white",
-    cursor="hand2",
-    command=delete_task,
-)
-delete_button.pack(side=tk.LEFT, padx=10, ipady=6, ipadx=8)
-
-clear_button = tk.Button(
-    button_frame,
-    text="Clear All",
-    font=("Helvetica", 10, "bold"),
-    bg="#74B9FF",  # Pastel Blue
-    fg="white",
-    bd=0,
-    activebackground="#0984E3",
-    activeforeground="white",
-    cursor="hand2",
-    command=clear_all,
-)
-clear_button.pack(side=tk.LEFT, padx=10, ipady=6, ipadx=8)
+# Initial load of items on execution
+active_tasks_mapping = []
+refresh_list()
 
 root.mainloop()
